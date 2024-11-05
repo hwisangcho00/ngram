@@ -19,7 +19,29 @@ impl Worker {
     // the thread should exit by breaking the loop.
     // This function should return a `Worker` as a handle to the thread.
     fn new(id: usize, receiver: Arc<Mutex<mpsc::Receiver<Job>>>) -> Worker {
-        todo!()
+        
+        let thread = thread::spawn(move || {
+            loop {
+                let job = receiver.lock().unwrap().recv();
+
+                match job {
+                    Ok(job) => {
+                        job();
+                    }
+                    Err(_) => {
+                        break;
+                    }
+                }
+            }
+        });
+
+        let thread = Some(thread);
+
+        Worker {
+            id,
+            thread,
+        }
+
     }
 }
 
@@ -35,7 +57,23 @@ impl ThreadPool {
     // in order to share it with the worker threads. Finally, return an instance of `ThreadPool`
     // that has the workers and the sender.
     pub fn new(size: usize) -> ThreadPool {
-        todo!()
+        
+        let mut workers = Vec::with_capacity(size);
+
+        let (tx, rx) = mpsc::channel();
+        let receiver = Arc::new(Mutex::new(rx));
+
+
+        for i in 0..size {
+            let worker = Worker::new(i, Arc::clone(&receiver));
+            workers.push(worker);
+        }
+
+        ThreadPool {
+            workers,
+            sender : Some(tx)
+        }
+
     }
 
     // TODO:
@@ -44,7 +82,12 @@ impl ThreadPool {
     where
         F: FnOnce() + Send + 'static,
     {
-        todo!()
+        if let Some(tx) = &self.sender {
+            let heap_f = Box::new(f);
+            if let Err(_) = tx.send(heap_f) {
+                eprintln!("Failed to send job to the worker threads");
+            }
+        }
     }
 }
 
@@ -55,7 +98,17 @@ impl Drop for ThreadPool {
     // each worker thread handle to make sure they finish executing. Calling `join` will also
     // require you to take ownership of the worker thread handle from inside the option.
     fn drop(&mut self) {
-        todo!()
+        if let Some(tx) = self.sender.take() {
+            drop(tx);
+        }
+
+        for worker in &mut self.workers {
+            if let Some(handle) = worker.thread.take() {
+                handle.join().expect("Worker thread panicked");
+            }
+        }
+
+
     }
 }
 
