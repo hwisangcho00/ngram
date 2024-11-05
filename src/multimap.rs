@@ -11,10 +11,20 @@ pub struct ConcurrentMultiMap<K: Hash + Eq, V> {
 }
 
 impl<K: Hash + Eq, V> ConcurrentMultiMap<K, V> {
-    // TODO:
     // Create a new empty ConcurrentMultiMap with the given number of buckets.
     pub fn new(bucket_count: usize) -> Self {
-        todo!()
+        
+        let mut buckets = Vec::with_capacity(bucket_count);
+
+        for _i in 0..bucket_count {
+            let new_bucket = RwLock::new(LinkedList::new());
+            buckets.push(new_bucket);
+        }
+
+        ConcurrentMultiMap {
+            buckets
+        }
+
     }
 }
 
@@ -26,7 +36,24 @@ impl<K: Hash + Eq, V: Clone + Eq> ConcurrentMultiMap<K, V> {
     // key-values pair already exists. If it does, return early. Otherwise, add the key-value pair
     // to the linked list.
     pub fn set(&self, key: K, value: V) {
-        todo!()
+        
+        let hash_val = hash_key(&key);
+        let mod_val = (hash_val % (self.buckets.len() as u64)) as usize;
+
+        if let Some(bucket) = self.buckets.get(mod_val) {
+            
+            let mut bucket = bucket.write().unwrap();
+
+            for (existing_key, existing_value) in bucket.iter() {
+                if *existing_key == key && *existing_value == value{
+                    return;
+                }
+            }
+
+            bucket.push_back((key, value));
+
+        }
+
     }
 
     // TODO:
@@ -39,7 +66,29 @@ impl<K: Hash + Eq, V: Clone + Eq> ConcurrentMultiMap<K, V> {
         K: Borrow<Q>,
         Q: Hash + Eq + ?Sized,
     {
-        todo!()
+        let mut result = Vec::new();
+
+        let hash_val = hash_key(&key);
+        let mod_val = (hash_val % (self.buckets.len() as u64)) as usize;
+
+        if let Some(bucket) = self.buckets.get(mod_val) {
+
+            let bucket = bucket.read().unwrap();
+
+            for (_, v) in bucket.iter() {
+                result.push(v.clone());
+            }
+
+        }
+
+        result
+
     }
 }
 
+fn hash_key<K : Hash> (key: &K) -> u64 {
+
+    let mut hasher = DefaultHasher::new();
+    key.hash(&mut hasher);
+    hasher.finish()
+}
