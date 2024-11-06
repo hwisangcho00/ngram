@@ -107,8 +107,6 @@ impl Drop for ThreadPool {
                 handle.join().expect("Worker thread panicked");
             }
         }
-
-
     }
 }
 
