@@ -75,8 +75,11 @@ impl<K: Hash + Eq, V: Clone + Eq> ConcurrentMultiMap<K, V> {
 
             let bucket = bucket.read().unwrap();
 
-            for (_, v) in bucket.iter() {
-                result.push(v.clone());
+            for (existing_key, value) in bucket.iter() {
+                if existing_key.borrow() == key {
+                    result.push(value.clone());
+                }
+                
             }
 
         }

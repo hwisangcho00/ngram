@@ -19,7 +19,32 @@ const WORKERS: usize = 16;
 // and then creating the appropriate response and turning it into bytes which are sent to along
 // the stream by calling the `write_all` method.
 fn process_message(state: Arc<ServerState>, request: Request, mut stream: TcpStream) {
-    todo!()
+    
+    let response = match request {
+        Request::Publish { doc } => {
+            let doc_id = state.database.publish(doc);
+            Response::PublishSuccess(doc_id)
+        },
+        Request::Search { word } => {
+            let results = state.database.search(&word);
+            Response::SearchSuccess(results)
+        },
+        Request::Retrieve { id } => {
+            match state.database.retrieve(id) {
+                Some(doc) => {
+                    Response::RetrieveSuccess(doc)
+                },
+                None => Response::Failure
+            }
+        }
+    };
+
+    let response_bytes = response.to_bytes();
+
+    if let Err(e) = stream.write_all(&response_bytes) {
+        eprintln!("Failed to process message: {}", e);
+    }
+
 }
 
 /// A struct that contains the state of the server
@@ -44,11 +69,28 @@ impl ServerState {
 pub struct Server {
     state: Arc<ServerState>,
 }
+
+fn handle_connection(state: Arc<ServerState>, mut stream: TcpStream) {
+    // Attempt to deserialize a request from the stream
+    if let Some(request) = Request::from_bytes(&mut stream) {
+        // Process the request if deserialization succeeds
+        process_message(state, request, stream);
+    } else {
+        eprintln!("Failed to deserialize request");
+    }
+}
+
 impl Server {
     // TODO:
     // Create a new server by using the `ServerState::new` function
     pub fn new() -> Self {
-        todo!()
+        let server_state = ServerState::new();
+        let state = Arc::new(server_state);
+
+        Server {
+            state
+        }
+
     }
 
     // TODO:
@@ -66,9 +108,36 @@ impl Server {
     // While looping to accept connections, you should also check the `is_stopped` flag in the
     // `ServerState` to see if the server has been stopped. If it has, you should break out of the
     // loop and return.
+
     fn listen(&self, port: u16) {
-        todo!()
+        let state = Arc::clone(&self.state);
+
+        thread::spawn(move || {
+            let listener = TcpListener::bind(("127.0.0.1", port)).expect("Failed to bind to address");
+            println!("Server listening on port {}", port);
+
+            loop {
+                if state.is_stopped.load(Ordering::SeqCst) {
+                    println!("Server is stopping...");
+                    break;
+                }
+                match listener.accept() {
+                    Ok((stream, _addr)) => {
+                        let state_clone = Arc::clone(&state);
+
+                        state.pool.execute(move || {
+                            handle_connection(state_clone, stream);
+                        });
+                    }
+                    Err(e) => {
+                        eprintln!("Failed to accept connection: {}", e);
+                    }
+                }
+            }
+        });
     }
+
+
 
     // This function has already been partially completed for you
     pub fn run(&self, port: u16) {
@@ -86,7 +155,12 @@ impl Server {
         }
 
         // TODO: Call the listen function and then loop (doing nothing) until the server has been stopped
-        todo!()
+
+        self.listen(port);
+
+        while !self.state.is_stopped.load(Ordering::SeqCst) {
+
+        }
     }
     pub fn stop(&self) {
         self.state.is_stopped.store(true, Ordering::SeqCst);
